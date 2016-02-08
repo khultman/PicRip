@@ -4,15 +4,46 @@ use strict;
 
 package rip;
 
-use Carp;
+use Carp qw(croak confess);
 use Data::Dumper qw(Dumper);
 use HTTP::Cookies;
 use HTTP::Request::Common qw(GET POST);
 use HTML::TreeBuilder;
 use LWP::Simple;
-use Pod::Usage;
 use Symbol qw(gensym);
 use URI::Split;
+
+our $AUTOLOAD;
+
+sub AUTOLOAD
+{
+  my ($self,$value)= @_ ;
+  return if $AUTOLOAD =~ /::DESTROY$/ ;
+  (my $attr = $AUTOLOAD) =~ s/.*:://;
+
+  if(! exists $self->{$attr})
+  {
+    confess("Attribute $attr does not exists in $self");
+  }
+
+  my $pkg = ref($self ) ;
+
+  my $code = qq{
+    package $pkg ;
+    sub $attr {
+      my \$self = shift ;
+      \@_ ? \$self->{$attr} = shift : \$self->{$attr} ;
+               }
+       
+  };
+  eval $code ;
+  if( $@ ){
+    Carp::confess("Failed to create method $AUTOLOAD : $@");
+  }
+  goto &$AUTOLOAD ;
+}
+
+
 
 my $_VER = 0.01;
 
@@ -22,6 +53,8 @@ sub new
   my $class = shift;
   my $self = { _class => $class, @_ };
   bless($self);
+
+  $self->sanityCheck();
 
   $self->{ua} = LWP::UserAgent->new;
   $self->{ua}->agent('Mozilla/8.0');
@@ -41,10 +74,24 @@ sub new
   return($self);
 }
 
+sub sanityCheck
+{
+  my $self = shift;
+  croak "No URL supplied to object" unless defined $self->{url};
+  croak "No user supplied to object" unless defined $self->{user};
+  croak "No pass supplied to object" unless defined $self->{pass};
+}
 
 sub baseURL
 {
   my $self = shift;
+  unless ( exists $self->{baseURL} )
+  {
+    my @parts = URI::Split->uri_split($self->url());
+    print "URL : " . $self->url() . "\n";
+    print Dumper(@parts) and die;
+  }
+  return $self->{baseURL};
 }  
 
 
@@ -196,18 +243,44 @@ sub numPages
   return $lPage;
 }
 
-sub help
-{
-  croak;
-}
+
+#sub url
+#{
+#  my $self = shift;
+#  return $self->{url};
+#}
 
 1;
 
 package main;
 
 use Getopt::Long;
+use Pod::Usage;
+use Term::ReadKey;
 
-my $ripper = new rip( ); 
+my %opts;
+GetOptions
+(
+  \%opts,
+  "help|h|?",
+  "user|u=s",
+  "pass|p=s",
+  "url=s",
+)
+or pod2usage(2);
+pod2usage(1) if defined ($opts{'help'});
+pod2usage(2) if not defined ($opts{'user'});
+if (!defined $opts{'pass'})
+{
+  print "Enter Password:";
+  ReadMode("noecho");
+  chomp($opts{'pass'} = <>);
+  ReadMode("original");
+  print "\n";
+}
+#pod2usage(2) if not defined ($opts{'pass'});
+pod2usage(2) if not defined ($opts{'url'});
+my $ripper = new rip(%opts); 
 
 
 __END__
