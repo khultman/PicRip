@@ -94,11 +94,14 @@ sub mo2dec
 }
 
 
-sub rip
+sub letItRip
 {
   my $self = shift;
   $self->logon();
-  #scrapeAllPages();
+  do
+  {
+    $self->scrapePage();
+  } while ( $self->nextPage() );
 }
 
 
@@ -124,18 +127,6 @@ sub logon
     confess "Apprerently we're not logged in!", ref($self);
   }
 
-}
-
-
-sub scrapeAllPages
-{
-  my $self = shift;
-  my $page;
-  for (1..87)
-  {
-    scrapePage($page);
-  }
-  my $nPages = numPages($page);
 }
 
 
@@ -180,6 +171,8 @@ sub scrapePage
     my $tdID = 0;
     foreach my $link ( @{ $tr->look_down( _tag => 'div', 'class' => 'postedText' )->extract_links('a') } )
     {
+      my $ext = "JPG";
+      next unless ( $link->[0] =~ /action=downloadfile/ );
       $tdID++;
       if ( exists( $status->{$self->tfID()}->{trIDs}->{$trID}->{links}->{$tdID} ) && exists( $status->{$self->tfID()}->{trIDs}->{$trID}->{files}->{$tdID} ) )
       {
@@ -188,6 +181,12 @@ sub scrapePage
       }
       else
       {
+#        if ( $link->[0] =~ /.*\.(arw|bmp|cr2|crw|dcp|dds|djvu|dng|fpx|gif|ico|ithmb|jp2|jpeg|jpg|nef|nrw|orf|pcd|pcx|pict|png|psd|sfw|tga|tif|tiff|webp|xcf)$/ )
+#        {
+#          $ext = uc($1);
+#        }
+#        else { next; }
+
         $status->{$self->tfID()}->{trIDs}->{$trID}->{links}->{$tdID} = $link->[0];
 
         if ( exists( $status->{$self->tfID()}->{index}->{$date} ) )
@@ -199,11 +198,11 @@ sub scrapePage
           $status->{$self->tfID()}->{index}->{$date} = 1;
         }
 
-        my $fn = sprintf("%d_%8d-%03d.JPG", $self->tfID(), $date, $status->{$self->tfID()}->{index}->{$date});
+        my $fn = sprintf("%d_%8d-%03d.%s", $self->tfID(), $date, $status->{$self->tfID()}->{index}->{$date}, $ext);
 
         #print "$fn\n" and die;
         print "getPicture($fn, $link->[0])\n";
-        #getPicture($ua, $fn, $link->[0]);
+        getPicture($fn, $link->[0]);
         $status->{$self->tfID()}->{trIDs}->{$trID}->{files}->{$tdID} = $fn;
       }
     }
@@ -216,10 +215,6 @@ sub scrapePage
 }
 
 
-# getPicture($ua, $fn, $href)
-# $ua = User Agent
-# $fn = File Name
-# $href = Url to grab
 sub getPicture
 {
   my ($self, $fn, $href) = @_;
@@ -232,8 +227,6 @@ sub getPicture
 }
 
 
-# saveStatus($status)
-# $status = hash to write to disk
 sub saveStatus
 {
   my ($self, $status) = @_;
@@ -400,7 +393,7 @@ if (!defined $opts{'pass'})
 pod2usage(2) if not defined ($opts{'url'});
 my $ripper = new rip(%opts); 
 $ripper->logon();
-$ripper->scrapePage();
+$ripper->letItRip();
 
 __END__
 
@@ -414,5 +407,6 @@ $0 [options] [URL]
     -h | --help              Brief Help message
     -u | --user              Username to use
     -p | --pass              Use a password, optionally use password supplied on command line
+    -url                     The forum url to scrape
 
 =cut
