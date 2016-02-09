@@ -13,4 +13,4 @@ disk so that you can recover from interruption or keep your local caache up-to-d
 the url specified, so if you've already downloaded the first 20 pages just plug in the url for page 20 and start there, instead of having
 to scan and skip the first 20 pages.
 
-
+This script does require the JSON module to be installed. On Mac or Linux a simple "sudo cpan install JSON" should take care of this dependancy.
