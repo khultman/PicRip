@@ -11,9 +11,11 @@ use HTTP::Request::Common qw(GET POST);
 use HTML::TreeBuilder;
 use LWP::Simple;
 use Symbol qw(gensym);
-use URI::Split;
+use URI::Split qw(uri_split);
 
 our $AUTOLOAD;
+our $VERSION = "0.02";
+
 
 sub AUTOLOAD
 {
@@ -44,10 +46,6 @@ sub AUTOLOAD
 }
 
 
-
-my $_VER = 0.01;
-
-
 sub new
 {
   my $class = shift;
@@ -68,11 +66,13 @@ sub new
     )
   );
 
-  # Our map of month to number
-  $self->{mo} = { qw( Jan 01 Feb 02 Mar 03 Apr 04 May 05 Jun 06 Jul 07 Aug 08 Sep 09 Oct 10 Nov 11 Dec 12 ) };
-
-  return($self);
+  my ($fID, $tID, $pID) = split(/_|\./, $self->initPage());
+  ($self->{fID}, $self->{tID}) = ($fID, $tID);
+  ($self->{pID}, $self->{initPageID}) = ($pID, $pID);
+ 
+  return $self;
 }
+
 
 sub sanityCheck
 {
@@ -82,30 +82,24 @@ sub sanityCheck
   croak "No pass supplied to object" unless defined $self->{pass};
 }
 
-sub baseURL
+
+sub mo2dec
 {
-  my $self = shift;
-  unless ( exists $self->{baseURL} )
-  {
-    my @parts = URI::Split->uri_split($self->url());
-    print "URL : " . $self->url() . "\n";
-    print Dumper(@parts) and die;
-  }
-  return $self->{baseURL};
-}  
+  my ($self, $month) = @_;
+  my $mo = { qw( Jan 01 Feb 02 Mar 03 Apr 04 May 05 Jun 06 Jul 07 Aug 08 Sep 09 Oct 10 Nov 11 Dec 12 ) };
+  croak "Fatal error, bad month: $month", ref($self) unless ( exists $mo->{$month} );
+  return $mo->{$month};
+}
 
 
 sub rip
 {
   my $self = shift;
-  logon();
-  scrapeAllPages();
+  $self->logon();
+  #scrapeAllPages();
 }
 
 
-
-# logon ( $ua, $user, $pass )
-# $ua = User Agent Object to use
 sub logon
 {
   my $self = shift;
@@ -113,7 +107,7 @@ sub logon
   my $user_field = 'user_usr';
   my $pass_field = 'user_pwd';
 
-  my $req = POST $self->baseURL() . '/index.php', [ $user_field => $self->{user}, $pass_field => $self->{pass}, 'mode' => 'login', 'queryStr' => '', 'pagetype' => 'index' ];
+  my $req = POST $self->baseURL() . '/index.php', [ $user_field => $self->user(), $pass_field => $self->pass(), 'mode' => 'login', 'queryStr' => '', 'pagetype' => 'index' ];
   my $res = $self->{ua}->request($req);
 
   ## Add some way to verify logon was successful
@@ -141,17 +135,16 @@ sub scrapeAllPages
 # $page = Url of the page to scrape
 sub scrapePage
 {
-  my ($self, $page) = @_;
+  my $self = shift;
 
-  my ($fID, $tID, $pID) = split(/_|\./, $page);
+  my $status = loadPrevStatus($self->page());
 
-  my $status = loadPrevStatus($page);
-
-  my $req = GET $self->baseURL() . '/' . $page;
+  my $req = GET $self->baseURL() . '/' . $self->page();
   my $res = $self->{ua}->request($req);
 
-  my $html = HTML::TreeBuilder->new_from_content($res->content());
-
+  my $html = HTML::TreeBuilder->new();
+  $html->utf_mode(1);
+  $html->parse($res->content());
 
   my $trc = 1;
   my $trd;
@@ -161,7 +154,7 @@ sub scrapePage
     my $date;
     if ( $html =~ m/(?:.*middot;\s+)(\d+)&nbsp;(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)&nbsp;(\d{4})/ )
     {
-      $date = sprintf("%4d%02d%02d", $3, $self->{mo}->{$2}, $1);
+      $date = sprintf("%4d%02d%02d", $3, $self->mo2dec($2), $1);
     }
     else
     {
@@ -208,8 +201,6 @@ sub saveStatus
 }
 
 
-# $status = loadPrevStatus($page)
-# $page = site page
 sub loadPrevStatus
 {
   my ($self, $page) = @_;
@@ -218,37 +209,65 @@ sub loadPrevStatus
 }
 
 
-# numPages($page)
-# $page = site page
-sub numPages
+sub baseURL
 {
-  my ($self, $page) = @_;
-  my ($fID, $tID, $pID) = split(/_|\./, $page);
-  my ($cPage, $lPage) = 0;
-  my $req = GET $self->baseURL() . '/' . $page;
+  my $self = shift;
+  unless ( exists $self->{baseURL} )
+  {
+    my ($scheme,$auth,$path,$query,$frag) = uri_split($self->url());
+    $self->{baseURL} = $auth;
+    ($self->{initPage} = $path) =~ s/^\///;
+  }
+  return $self->{baseURL};
+}  
+
+
+sub lastPage
+{
+  my $self = shift;
+
+  if (exists $self->{lastPage})
+  {
+    return $self->{lastPage};
+  }
+
+  ($self->{curPage}, $self->{lastPage}) = 0;
+  my $req = GET $self->url();
   my $res = $self->{ua}->request($req);
 
-  my $html = HTML::TreeBuilder->new_from_content($res->content());
+  #my $html = HTML::TreeBuilder->new_from_content($res->content());
+  my $html = HTML::TreeBuilder->new();
+  $html->utf8_mode(1);
+  $html->parse($res->content());
   my $pages = $html->look_down( 'class' => 'pageGif', 'title' => 'Page' )->right();
 
-  # ?Page 1 of 87:??
   if ( $pages =~ /.*\s+(\d+)\s+of\s+(\d+).*/ )
   {
-    ($cPage, $lPage) = ($1, $2);
+    ($self->{curPage}, $self->{lastPage}) = ($1, $2);
   }
   else
   {
     croak "Could not identify page position, something on the page must have changed!\n";
   }
-  return $lPage;
+  return $self->{lastPage};
 }
 
 
-#sub url
-#{
-#  my $self = shift;
-#  return $self->{url};
-#}
+sub nextPage
+{
+  my $self = shift;
+  return 0 if ($self->pID() == $self->lastPage());
+  $self->pID($self->pID + 1);
+  return $self->page();
+}
+
+
+sub page
+{
+  my $self = shift;
+  my $page = sprintf("%d_%d_%d.html", $self->fID(), $self->tID(), $self->pID());
+  return $page;
+}
 
 1;
 
@@ -281,7 +300,9 @@ if (!defined $opts{'pass'})
 #pod2usage(2) if not defined ($opts{'pass'});
 pod2usage(2) if not defined ($opts{'url'});
 my $ripper = new rip(%opts); 
-
+print "Last Page: " . $ripper->lastPage() . "\n";
+print "Current page: " . $ripper->page() . "\n";
+print "Next page: " . $ripper->nextPage() . "\n";
 
 __END__
 
