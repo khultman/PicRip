@@ -148,7 +148,7 @@ sub scrapePage
   {
     my $html = $tr->look_down( _tag => 'td', 'class' => 'caption1')->right->look_down( _tag => 'span' )->as_HTML();
     my ($date, $trID);
-    if ( $html =~ m/.*#(\d+)<\/a>\s+\&middot;\s+(\d+)&nbsp;(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)&nbsp;(\d{4})/ )
+    if ( $html =~ m/.*#(\d+|\d+,\d+)<\/a>\s+\&middot;\s+(\d+)&nbsp;(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)&nbsp;(\d{4})/ )
     {
       $date = sprintf("%4d%02d%02d", $4, $self->mo2dec($3), $2);
       $trID = $1;
