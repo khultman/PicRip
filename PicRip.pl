@@ -161,8 +161,15 @@ sub scrapePage
     {
       $date = sprintf("%4d%02d%02d", $4, $self->mo2dec($3), $2);
       $trID = $1;
-      if ( exists  $status->{$self->tfID()}->{trs}->{$trID} ) { next; }
-      $status->{$self->tfID()}->{trs}->{$trID} = $date;
+      if ( exists  $status->{$self->tfID()}->{trIDs}->{$trID}->{date} )
+      {
+        # Already seen this row, but possible it didn't download all images
+        #next;
+      }
+      else
+      {
+        $status->{$self->tfID()}->{trIDs}->{$trID}->{date} = $date;
+      }
     }
     else
     {
@@ -170,36 +177,41 @@ sub scrapePage
       next;
     }
 
+    my $tdID = 0;
     foreach my $link ( @{ $tr->look_down( _tag => 'div', 'class' => 'postedText' )->extract_links('a') } )
     {
-      if ( exists( $status->{$self->tfID()}->{index}->{$date} ) )
+      $tdID++;
+      if ( exists( $status->{$self->tfID()}->{trIDs}->{$trID}->{links}->{$tdID} ) && exists( $status->{$self->tfID()}->{trIDs}->{$trID}->{files}->{$tdID} ) )
       {
-        $status->{$self->tfID()}->{index}->{$date}++;
+          print $status->{$self->tfID()}->{trIDs}->{$trID}->{files}->{$tdID} . " already downloaded, delete " . $self->statusFile() . " to force retry; skipping\n";
+          next;
       }
       else
       {
-        $status->{$self->tfID()}->{index}->{$date} = 1;
-      }
+        $status->{$self->tfID()}->{trIDs}->{$trID}->{links}->{$tdID} = $link->[0];
 
-      my $fn = sprintf("%d_%8d-%03d.JPG", $self->tfID(), $date, $status->{$self->tfID()}->{index}->{$date});
+        if ( exists( $status->{$self->tfID()}->{index}->{$date} ) )
+        {
+          $status->{$self->tfID()}->{index}->{$date}++;
+        }
+        else
+        {
+          $status->{$self->tfID()}->{index}->{$date} = 1;
+        }
 
-      #print "$fn\n" and die;
-      if ( exists $status->{$self->tfID()}->{links}->{$trID}->{$fn} )
-      {
-        next;
-      }
-      else
-      {
+        my $fn = sprintf("%d_%8d-%03d.JPG", $self->tfID(), $date, $status->{$self->tfID()}->{index}->{$date});
+
+        #print "$fn\n" and die;
         print "getPicture($fn, $link->[0])\n";
         #getPicture($ua, $fn, $link->[0]);
-        $status->{$self->tfID()}->{links}->{$trID}->{$fn} = $link->[0];
+        $status->{$self->tfID()}->{trIDs}->{$trID}->{files}->{$tdID} = $fn;
       }
     }
 
     #$status->{$self->tfID()}->{$self->page()}->{tr}++;
   }
 
-  print Dumper($status);
+  #print Dumper($status);
   $self->saveStatus($status);
 }
 
