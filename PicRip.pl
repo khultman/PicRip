@@ -202,7 +202,7 @@ sub scrapePage
 
         #print "$fn\n" and die;
         print "getPicture($fn, $link->[0])\n";
-        getPicture($fn, $link->[0]);
+        $self->getPicture($fn, $link->[0]);
         $status->{$self->tfID()}->{trIDs}->{$trID}->{files}->{$tdID} = $fn;
       }
     }
@@ -220,7 +220,10 @@ sub getPicture
   my ($self, $fn, $href) = @_;
   my $req = GET $href;
   my $fh = gensym();
-  die unless ( open ( $fh, '>', $fn ) );
+  unless ( open ( $fh, '>', $fn ) )
+  {
+    confess "I could not open $fn for writing to the file system", ref($self);
+  }
   my $res = $self->{ua}->request( $req, sub { print $fh $_[0] } );
   close $fh;
   return 1;
