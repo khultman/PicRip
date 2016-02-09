@@ -4,12 +4,14 @@ use strict;
 
 package rip;
 
-use Carp qw(croak confess);
+use Carp qw(cluck croak confess);
 use Data::Dumper qw(Dumper);
 use HTTP::Cookies;
 use HTTP::Request::Common qw(GET POST);
 use HTML::TreeBuilder;
+use JSON qw(decode_json encode_json);
 use LWP::Simple;
+use Storable qw(store retrieve);
 use Symbol qw(gensym);
 use URI::Split qw(uri_split);
 
@@ -56,7 +58,7 @@ sub new
 
   $self->{ua} = LWP::UserAgent->new;
   $self->{ua}->agent('Mozilla/8.0');
-  $self->{ua}->default_header('Referer' => $self->baseURL());
+  $self->{ua}->default_header('Referer' => 'http://' . $self->baseURL());
   $self->{ua}->cookie_jar
   (
     HTTP::Cookies->new
@@ -107,17 +109,24 @@ sub logon
   my $user_field = 'user_usr';
   my $pass_field = 'user_pwd';
 
-  my $req = POST $self->baseURL() . '/index.php', [ $user_field => $self->user(), $pass_field => $self->pass(), 'mode' => 'login', 'queryStr' => '', 'pagetype' => 'index' ];
+  my $req = POST $self->index(), [ $user_field => $self->user(), $pass_field => $self->pass(), 'mode' => 'login', 'queryStr' => '', 'pagetype' => 'index' ];
   my $res = $self->{ua}->request($req);
 
-  ## Add some way to verify logon was successful
-  ## Right now it looks like the cookie is getting the logged in status
-  ## but the handler returns a 302 'Moved' - not a success
+  $req = GET $self->index();
+  $res = $self->{ua}->request($req);
+
+  my $html = HTML::TreeBuilder->new();
+  $html->utf8_mode(1);
+  $html->parse($res->content());
+
+  unless ($html->as_HTML() =~ /.*Signed in as:/)
+  {
+    confess "Apprerently we're not logged in!", ref($self);
+  }
+
 }
 
 
-# scrapeAllPages($ua)
-# $ua = User Agent
 sub scrapeAllPages
 {
   my $self = shift;
@@ -130,27 +139,23 @@ sub scrapeAllPages
 }
 
 
-# scrapePage ( $ua , $page )
-# $ua = User Agent object
-# $page = Url of the page to scrape
 sub scrapePage
 {
   my $self = shift;
 
-  my $status = loadPrevStatus($self->page());
+  my $status = $self->loadStatus();
 
-  my $req = GET $self->baseURL() . '/' . $self->page();
+  my $req = GET $self->pageURL();
   my $res = $self->{ua}->request($req);
 
   my $html = HTML::TreeBuilder->new();
-  $html->utf_mode(1);
+  $html->utf8_mode(1);
   $html->parse($res->content());
 
-  my $trc = 1;
-  my $trd;
+  $status->{$self->tfID()}->{$self->page()} = 0;
   foreach my $tr ( $html->look_down( sub { $_[0]->attr('_tag') =~ /tr/i && defined $_[0]->attr('class') && $_[0]->attr('class') =~ /tbCel[12]/ } ) )
   {
-    my $html = $tr->look_down( _tag => 'td')->right->look_down( _tag => 'span' )->as_HTML();
+    my $html = $tr->look_down( _tag => 'td', 'class' => 'caption1')->right->look_down( _tag => 'span' )->as_HTML();
     my $date;
     if ( $html =~ m/(?:.*middot;\s+)(\d+)&nbsp;(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)&nbsp;(\d{4})/ )
     {
@@ -158,19 +163,34 @@ sub scrapePage
     }
     else
     {
-      croak "Couldn't split date string from the post, page layout may have changed\nHTML: $html\n";
+      cluck "Couldn't split date string from the post, page layout may have changed\nHTML: $html", ref($self);
+      next;
     }
 
-    foreach my $link ( @{ $tr->look_down( _tag => 'div', 'class' => 'postedText' )->extract_links( 'a'  ) } )
+    foreach my $link ( @{ $tr->look_down( _tag => 'div', 'class' => 'postedText' )->extract_links('a') } )
     {
-      if ( exists( $trd->{$date} ) ) { $trd->{$date}++ } else { $trd->{$date} = 1 }
-      my $fn = sprintf("%d-%d_%8d-%03d.JPG", $fID, $tID, $date, $trd->{$date});
+      if ( exists( $status->{$self->tfID()}->{$date}->{index} ) )
+      {
+        $status->{$self->tfID()}->{$date}->{index}++;
+      }
+      else
+      {
+        $status->{$self->tfID()}->{$date}->{index} = 1;
+      }
+
+      #print $self->tfID() . "\n";
+      #print $date . "\n";
+      #print $status->{$self->tfid()}->{$date}->{index} . "\n" and die;
+      my $fn = sprintf("%d_%8d-%03d.JPG", $self->tfID(), $date, $status->{$self->tfID()}->{$date}->{index});
+      print "getPicture($fn, $link->[0])\n";
 #      getPicture($ua, $fn, $link->[0]);
     }
 
-    $trc++;
+    $status->{$self->tfID()}->{$self->page()}++;
   }
 
+  print Dumper($status);
+  $self->saveStatus($status);
 }
 
 
@@ -195,17 +215,34 @@ sub getPicture
 sub saveStatus
 {
   my ($self, $status) = @_;
-  my $fn = $0 . '.log';
-  local $Data::Dumper::Terse = 1; 
-  local $Data::Dumper::Indent = 0;
+  my $json = encode_json($status);
+  my $fh = gensym();
+  unless ( open ( $fh, '>', $self->statusFile() ) )
+  {
+    confess "Could not open " . $self->statusFile() . " for saving process status", ref($self);
+  }
+  print $fh $json;
+  close $fh;
+  return 1;
 }
 
 
-sub loadPrevStatus
+sub loadStatus
 {
-  my ($self, $page) = @_;
-  my ($fID, $tID, $pID) = split(/_|\./, $page);
-  next if $pID eq "1";
+  my $self = shift;
+  my $status;
+  my $fh = gensym();
+  if (-e $self->statusFile() )
+  {
+    unless ( open ( $fh, '<', $self->statusFile() ) )
+    {
+      confess "Could not open " . $self->statusFile() . " for reading process status", ref($self);
+    }
+    my $json = <$fh>;
+    close $fh;
+    $status = decode_json($json);
+  }
+  return $status;
 }
 
 
@@ -221,6 +258,16 @@ sub baseURL
   return $self->{baseURL};
 }  
 
+
+sub index
+{
+  my $self = shift;
+  unless ( defined $self->{index} )
+  {
+    $self->{index} = 'http://' . $self->baseURL() . '/index.php';
+  }
+  return $self->{index};
+}
 
 sub lastPage
 {
@@ -247,7 +294,7 @@ sub lastPage
   }
   else
   {
-    croak "Could not identify page position, something on the page must have changed!\n";
+    confess "Could not identify page position, something on the page must have changed!\n";
   }
   return $self->{lastPage};
 }
@@ -268,6 +315,36 @@ sub page
   my $page = sprintf("%d_%d_%d.html", $self->fID(), $self->tID(), $self->pID());
   return $page;
 }
+
+
+sub pageURL
+{
+  my $self = shift;
+  return 'http://' . $self->baseURL() . '/' . $self->page();
+}
+
+
+sub statusFile
+{
+  my $self = shift;
+  unless ( exists $self->{statusFile} )
+  {
+    $self->{statusFile} = sprintf("%d_%d.bin", $self->fID(), $self->tID());
+  }
+  return $self->{statusFile};
+}
+
+
+sub tfID
+{
+  my $self = shift;
+  unless ( exists $self->{tfID} )
+  {
+    $self->{tfID} = $self->tID() . $self->fID();
+  }
+  return $self->{tfID};
+}
+
 
 1;
 
@@ -300,9 +377,8 @@ if (!defined $opts{'pass'})
 #pod2usage(2) if not defined ($opts{'pass'});
 pod2usage(2) if not defined ($opts{'url'});
 my $ripper = new rip(%opts); 
-print "Last Page: " . $ripper->lastPage() . "\n";
-print "Current page: " . $ripper->page() . "\n";
-print "Next page: " . $ripper->nextPage() . "\n";
+$ripper->logon();
+$ripper->scrapePage();
 
 __END__
 
