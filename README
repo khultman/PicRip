@@ -1,0 +1,16 @@
+Designed to rip images from a custom CMS based loosely on vBulletin.
+
+The URLs look like <site>/xx_xxxxx_xx.html
+
+Usage:
+
+perl PicRip.pl -u <user> [-p <password>] -url "<forum URL>"
+
+If you do not specify a password you will be prompted; this may be desireable if you don't want the password on the command line history.
+
+The script will initiate authentication to the forum and begin downloading images from the specified URL. It will save it's state to
+disk so that you can recover from interruption or keep your local caache up-to-date with the forum. It will also start the download from
+the url specified, so if you've already downloaded the first 20 pages just plug in the url for page 20 and start there, instead of having
+to scan and skip the first 20 pages.
+
+
