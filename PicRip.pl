@@ -148,18 +148,21 @@ sub scrapePage
   my $req = GET $self->pageURL();
   my $res = $self->{ua}->request($req);
 
-  my $html = HTML::TreeBuilder->new();
-  $html->utf8_mode(1);
-  $html->parse($res->content());
+  my $tree = HTML::TreeBuilder->new();
+  $tree->utf8_mode(1);
+  $tree->parse($res->content());
 
-  $status->{$self->tfID()}->{$self->page()} = 0;
-  foreach my $tr ( $html->look_down( sub { $_[0]->attr('_tag') =~ /tr/i && defined $_[0]->attr('class') && $_[0]->attr('class') =~ /tbCel[12]/ } ) )
+  #$status->{$self->tfID()}->{$self->page()}->{tr} = 0;
+  foreach my $tr ( $tree->look_down( sub { $_[0]->attr('_tag') =~ /tr/i && defined $_[0]->attr('class') && $_[0]->attr('class') =~ /tbCel[12]/ } ) )
   {
     my $html = $tr->look_down( _tag => 'td', 'class' => 'caption1')->right->look_down( _tag => 'span' )->as_HTML();
-    my $date;
-    if ( $html =~ m/(?:.*middot;\s+)(\d+)&nbsp;(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)&nbsp;(\d{4})/ )
+    my ($date, $trID);
+    if ( $html =~ m/.*(\d)<\/a>\s+\&middot;\s+(\d+)&nbsp;(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)&nbsp;(\d{4})/ )
     {
-      $date = sprintf("%4d%02d%02d", $3, $self->mo2dec($2), $1);
+      $date = sprintf("%4d%02d%02d", $4, $self->mo2dec($3), $2);
+      $trID = $1;
+      if ( exists  $status->{$self->tfID()}->{trs}->{$trID} ) { next; }
+      $status->{$self->tfID()}->{trs}->{$trID} = $date;
     }
     else
     {
@@ -169,24 +172,31 @@ sub scrapePage
 
     foreach my $link ( @{ $tr->look_down( _tag => 'div', 'class' => 'postedText' )->extract_links('a') } )
     {
-      if ( exists( $status->{$self->tfID()}->{$date}->{index} ) )
+      if ( exists( $status->{$self->tfID()}->{index}->{$date} ) )
       {
-        $status->{$self->tfID()}->{$date}->{index}++;
+        $status->{$self->tfID()}->{index}->{$date}++;
       }
       else
       {
-        $status->{$self->tfID()}->{$date}->{index} = 1;
+        $status->{$self->tfID()}->{index}->{$date} = 1;
       }
 
-      #print $self->tfID() . "\n";
-      #print $date . "\n";
-      #print $status->{$self->tfid()}->{$date}->{index} . "\n" and die;
-      my $fn = sprintf("%d_%8d-%03d.JPG", $self->tfID(), $date, $status->{$self->tfID()}->{$date}->{index});
-      print "getPicture($fn, $link->[0])\n";
-#      getPicture($ua, $fn, $link->[0]);
+      my $fn = sprintf("%d_%8d-%03d.JPG", $self->tfID(), $date, $status->{$self->tfID()}->{index}->{$date});
+
+      #print "$fn\n" and die;
+      if ( exists $status->{$self->tfID()}->{links}->{$trID}->{$fn} )
+      {
+        next;
+      }
+      else
+      {
+        print "getPicture($fn, $link->[0])\n";
+        #getPicture($ua, $fn, $link->[0]);
+        $status->{$self->tfID()}->{links}->{$trID}->{$fn} = $link->[0];
+      }
     }
 
-    $status->{$self->tfID()}->{$self->page()}++;
+    #$status->{$self->tfID()}->{$self->page()}->{tr}++;
   }
 
   print Dumper($status);
