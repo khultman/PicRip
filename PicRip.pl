@@ -220,7 +220,7 @@ sub scrapePage
   }
 
   #print Dumper($status);
-  $status->{$self->tfID()}->{LPS} = $self->curPage();
+  $status->{$self->tfID()}->{LPS} = $self->pID();
   $self->saveStatus($status);
 }
 
