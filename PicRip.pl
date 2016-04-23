@@ -74,7 +74,7 @@ sub new
 
   if ($self->{pID} < $self->LPS())
   {
-    $self->{pID} = $self->LPS() - 10;
+    $self->{pID} = $self->LPS() - $self->{rbak};
     if ($self->{pID} < 1)
     {
       $self->{pID} = 1;
@@ -406,6 +406,7 @@ GetOptions
   "user|u=s",
   "pass|p=s",
   "url=s",
+  "rbak|r=i",
 )
 or pod2usage(2);
 pod2usage(1) if defined ($opts{'help'});
@@ -418,6 +419,12 @@ if (!defined $opts{'pass'})
   ReadMode("original");
   print "\n";
 }
+
+if (!defined $opts{'rbak'})
+{
+    $opts{'rbak'} = 10;
+}
+
 #pod2usage(2) if not defined ($opts{'pass'});
 pod2usage(2) if not defined ($opts{'url'});
 my $ripper = new rip(%opts); 
@@ -436,6 +443,7 @@ $0 [options] [URL]
     -h | --help              Brief Help message
     -u | --user              Username to use
     -p | --pass              Use a password, optionally use password supplied on command line
+    -r | --rbak              Rollback <X> pages on resume, defaults to 10
     -url                     The forum url to scrape
 
 =cut
