@@ -71,6 +71,15 @@ sub new
   my ($fID, $tID, $pID) = split(/_|\./, $self->initPage());
   ($self->{fID}, $self->{tID}) = ($fID, $tID);
   ($self->{pID}, $self->{initPageID}) = ($pID, $pID);
+
+  if ($self->{pID} < $self->LPS())
+  {
+    $self->{pID} = $self->LPS() - 10;
+    if ($self->{pID} < 1)
+    {
+      $self->{pID} = 1;
+    }
+  }
  
   return $self;
 }
@@ -154,7 +163,7 @@ sub scrapePage
       $trID = $1;
       if ( exists  $status->{$self->tfID()}->{trIDs}->{$trID}->{date} )
       {
-        # Already seen this row, but possible it didn't download all images
+        # We've already seen this row, but its possible it didn't download all images
         #next;
       }
       else
@@ -164,7 +173,7 @@ sub scrapePage
     }
     else
     {
-      cluck "Couldn't split date string from the post, page layout may have changed\nHTML: $html", ref($self);
+      cluck "Couldn't split date string from the post, page layout may have changed or the post may be too new.\nHTML: $html", ref($self);
       next;
     }
 
@@ -211,6 +220,7 @@ sub scrapePage
   }
 
   #print Dumper($status);
+  $status->{$self->tfID()}->{LPS} = $self->curPage();
   $self->saveStatus($status);
 }
 
@@ -361,6 +371,22 @@ sub tfID
     $self->{tfID} = $self->tID() . $self->fID();
   }
   return $self->{tfID};
+}
+
+
+sub LPS
+{
+  my $self = shift;
+  my $status = $self->loadStatus();
+  if (exists $status->{$self->tfID()}->{LPS})
+  {
+    $self->{LPS} = $status->{$self->tfID()}->{LPS};
+  }
+  else
+  {
+    $self->{LPS} = 0;
+  }
+  return $self->{LPS};
 }
 
 
